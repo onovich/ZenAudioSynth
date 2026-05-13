@@ -2,6 +2,7 @@ import * as Tone from 'tone';
 
 export function createAudioEngine() {
   let initialized = false;
+  let lastScheduledTime = 0;
   let globalFilter;
   let masterVolume;
   let reverb;
@@ -73,7 +74,9 @@ export function createAudioEngine() {
     const params = asset.params;
     const frequency = params.freq;
     const duration = asset.config.length;
-    const time = Tone.now();
+    const time = Math.max(Tone.now(), lastScheduledTime + 0.001);
+
+    lastScheduledTime = time;
 
     globalFilter?.frequency.rampTo(params.filter, 0.01);
 
@@ -118,6 +121,7 @@ export function createAudioEngine() {
     globalFilter?.dispose?.();
     masterVolume?.dispose?.();
     reverb?.dispose?.();
+    lastScheduledTime = 0;
   }
 
   return {
