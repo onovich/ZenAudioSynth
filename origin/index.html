@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>侘寂之声 | Zen Audio Synth</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg-color: #EAE7E0; /* Warm off-white */
+            --text-main: #4A4A4A;
+            --text-light: #8A8A8A;
+            --accent-line: rgba(74, 74, 74, 0.1);
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .font-serif {
+            font-family: 'Cormorant Garamond', serif;
+        }
+
+        /* SVG Noise Filter for Paper Texture */
+        .noise-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            pointer-events: none;
+            z-index: 50;
+            opacity: 0.12; /* 大幅降低噪点透明度，减少视觉干扰 */
+            background: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+            mix-blend-mode: multiply;
+        }
+
+        /* Fluid Background Canvas */
+        #fluidCanvas {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            z-index: 0;
+            opacity: 0.8;
+            transition: opacity 1s ease;
+        }
+
+        .ui-layer {
+            position: relative;
+            z-index: 10;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Bonsai Garden (Asset Orbs) */
+        .asset-orb {
+            width: 80px;
+            height: 80px;
+            border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%;
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.02);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.6s cubic-bezier(0.25, 1, 0.5, 1);
+            animation: morph 8s ease-in-out infinite alternate;
+        }
+
+        .asset-orb:hover {
+            transform: scale(1.05) translateY(-5px);
+            background: rgba(255, 255, 255, 0.4);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.05);
+        }
+
+        .asset-orb.active {
+            border-color: rgba(74, 74, 74, 0.4);
+            background: rgba(255, 255, 255, 0.6);
+        }
+
+        @keyframes morph {
+            0% { border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%; }
+            34% { border-radius: 70% 30% 50% 50% / 30% 30% 70% 70%; }
+            67% { border-radius: 100% 60% 60% 100% / 100% 100% 60% 60%; }
+            100% { border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%; }
+        }
+
+        /* Deconstruct Panel (Analog Synth Style) */
+        #deconstruct-panel {
+            position: absolute;
+            bottom: -100%;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
+            max-width: 600px;
+            background: rgba(234, 231, 224, 0.85);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--accent-line);
+            border-bottom: none;
+            border-radius: 20px 20px 0 0;
+            padding: 2rem;
+            transition: bottom 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+            box-shadow: 0 -10px 40px rgba(0,0,0,0.03);
+            z-index: 100; /* 提升层级，防止被遮挡 */
+        }
+
+        #deconstruct-panel.open {
+            bottom: 0;
+        }
+
+        /* Analog Sliders */
+        .slider-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .slider-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-light);
+        }
+
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100px;
+            height: 2px;
+            background: var(--accent-line);
+            outline: none;
+            transform: rotate(-90deg);
+            margin: 30px 0; /* 调小间距以适应两行布局 */
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--text-main);
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        input[type=range]::-webkit-slider-thumb:hover {
+            transform: scale(1.3);
+        }
+
+        .btn-minimal {
+            background: transparent;
+            border: 1px solid var(--accent-line);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            letter-spacing: 0.05em;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-minimal:hover {
+            background: rgba(74, 74, 74, 0.05);
+            border-color: rgba(74, 74, 74, 0.3);
+        }
+
+        .btn-primary {
+            background: var(--text-main);
+            color: var(--bg-color);
+            border: none;
+        }
+        .btn-primary:hover {
+            background: #2a2a2a;
+        }
+        .btn-disabled {
+            opacity: 0.3;
+            pointer-events: none;
+        }
+
+        /* Modal */
+        #message-box {
+            position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+            background: var(--text-main); color: var(--bg-color);
+            padding: 10px 20px; border-radius: 30px; font-size: 0.85rem;
+            opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 100;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="noise-overlay"></div>
+    <canvas id="fluidCanvas"></canvas>
+    <div id="message-box">提示信息</div>
+
+    <div class="ui-layer p-8">
+        <!-- Header -->
+        <header class="text-center mb-16 mt-8">
+            <h1 class="font-serif text-3xl italic tracking-widest text-gray-800 mb-2">侘 寂</h1>
+            <p class="text-xs tracking-widest text-gray-500 uppercase">Acoustic Zen Garden</p>
+        </header>
+
+        <!-- Main Workspace (Garden) -->
+        <main class="flex-1 flex flex-col items-center justify-center relative">
+            <div id="init-overlay" class="absolute inset-0 flex items-center justify-center z-50 bg-[#EAE7E0] transition-opacity duration-1000">
+                <button id="start-btn" class="font-serif text-xl italic tracking-wide text-gray-600 hover:text-gray-900 transition-colors">
+                    [ 触碰以苏醒 / Tap to Awaken ]
+                </button>
+            </div>
+
+            <!-- Asset Orbs Container -->
+            <div class="w-full max-w-4xl flex flex-wrap justify-center gap-12" id="assets-container">
+                <!-- Orbs injected by JS -->
+            </div>
+            
+            <div class="w-full max-w-4xl mt-16 pt-8 border-t border-[rgba(74,74,74,0.1)] hidden" id="custom-assets-section">
+                <p class="text-xs text-center tracking-widest text-gray-400 uppercase mb-8">Custom / 自定义</p>
+                <div class="flex flex-wrap justify-center gap-8" id="custom-assets-container"></div>
+            </div>
+        </main>
+
+        <!-- Actions -->
+        <div class="fixed bottom-8 w-full flex justify-center z-20 pointer-events-none">
+            <div id="context-actions" class="pointer-events-auto opacity-0 transition-opacity duration-500 flex gap-4">
+                <button id="btn-deconstruct" class="btn-minimal">Deconstruct (解构)</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="deconstruct-panel">
+        <div class="flex justify-between items-center mb-8 border-b border-[rgba(74,74,74,0.1)] pb-4">
+            <div>
+                <h2 id="panel-title" class="font-serif text-xl italic outline-none transition-all duration-300 border-b border-transparent focus:border-gray-400" spellcheck="false" title="点击重命名 (仅自定义资产)">Empty Bowl</h2>
+                <p id="panel-status" class="text-xs text-gray-500 mt-1">Preset / 预设 (无法直接保存)</p>
+            </div>
+            <div class="flex gap-3">
+                <button id="btn-remix" class="btn-minimal">Remix (提取)</button>
+                <button id="btn-save" class="btn-minimal btn-primary btn-disabled">Save (保存)</button>
+                <button id="btn-close-panel" class="btn-minimal text-gray-400 border-transparent hover:border-gray-300">✕</button>
+            </div>
+        </div>
+
+        <div class="flex flex-col gap-6">
+            <!-- Source Mix Row -->
+            <div class="flex justify-around items-center h-32">
+                <!-- Noise -->
+                <div class="slider-group">
+                    <input type="range" id="val-noise" min="0" max="1" step="0.01" value="0">
+                    <span class="slider-label mt-6">Noise</span>
+                </div>
+                <!-- Impulse -->
+                <div class="slider-group">
+                    <input type="range" id="val-impulse" min="0" max="1" step="0.01" value="0">
+                    <span class="slider-label mt-6">Impulse</span>
+                </div>
+                <!-- Sine -->
+                <div class="slider-group">
+                    <input type="range" id="val-sine" min="0" max="1" step="0.01" value="0">
+                    <span class="slider-label mt-6">Sine</span>
+                </div>
+                <!-- FM -->
+                <div class="slider-group">
+                    <input type="range" id="val-fm" min="0" max="1" step="0.01" value="0">
+                    <span class="slider-label mt-6">FM</span>
+                </div>
+                <!-- Sawtooth -->
+                <div class="slider-group">
+                    <input type="range" id="val-saw" min="0" max="1" step="0.01" value="0">
+                    <span class="slider-label mt-6">Saw</span>
+                </div>
+            </div>
+
+            <!-- Shape & Tone Row -->
+            <div class="flex justify-around items-center h-32 border-t border-[rgba(74,74,74,0.1)] pt-6">
+                <!-- Freq -->
+                <div class="slider-group">
+                    <input type="range" id="val-freq" min="50" max="2000" step="1" value="220">
+                    <span class="slider-label mt-6">Freq</span>
+                </div>
+                <!-- Filter -->
+                <div class="slider-group">
+                    <input type="range" id="val-filter" min="100" max="10000" step="10" value="2000">
+                    <span class="slider-label mt-6">Filter</span>
+                </div>
+                <!-- Attack -->
+                <div class="slider-group">
+                    <input type="range" id="val-envA" min="0.005" max="2" step="0.01" value="0.1">
+                    <span class="slider-label mt-6">Atk</span>
+                </div>
+                <!-- Decay -->
+                <div class="slider-group">
+                    <input type="range" id="val-envD" min="0.05" max="5" step="0.01" value="2">
+                    <span class="slider-label mt-6">Dec</span>
+                </div>
+                <!-- Sustain -->
+                <div class="slider-group">
+                    <input type="range" id="val-envS" min="0" max="1" step="0.01" value="0">
+                    <span class="slider-label mt-6">Sus</span>
+                </div>
+                <!-- Release -->
+                <div class="slider-group">
+                    <input type="range" id="val-envR" min="0.1" max="5" step="0.01" value="3">
+                    <span class="slider-label mt-6">Rel</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. Audio Engine (Tone.js) ---
+        let audioInit = false;
+        const synths = {};
+        let globalFilter;
+
+        function initAudio() {
+            if (audioInit) return;
+            
+            // 更大的空间感，更轻柔的主音量
+            const reverb = new Tone.Reverb({ decay: 6, preDelay: 0.2, wet: 0.6 }).toDestination();
+            const masterVol = new Tone.Volume(-12).connect(reverb);
+            
+            // 全局低通滤波器
+            globalFilter = new Tone.Filter(2000, "lowpass").connect(masterVol);
+
+            // The 5 Atomic Synthesizers
+            synths.sine = new Tone.Synth({
+                oscillator: { type: "sine" },
+                envelope: { attack: 0.1, decay: 2, sustain: 0, release: 3 }
+            }).connect(globalFilter);
+
+            synths.fm = new Tone.FMSynth({
+                harmonicity: 1.5,
+                modulationIndex: 2,
+                oscillator: { type: "sine" },
+                modulation: { type: "sine" },
+                envelope: { attack: 0.05, decay: 2, sustain: 0, release: 3 }
+            }).connect(globalFilter);
+
+            synths.impulse = new Tone.MembraneSynth({
+                pitchDecay: 0.02,
+                octaves: 2,
+                oscillator: { type: "sine" },
+                envelope: { attack: 0.01, decay: 0.4, sustain: 0, release: 0.2 }
+            }).connect(globalFilter);
+
+            synths.saw = new Tone.Synth({
+                oscillator: { type: "sawtooth" },
+                envelope: { attack: 0.2, decay: 1, sustain: 0, release: 1.5 }
+            }).connect(globalFilter);
+
+            synths.noise = new Tone.NoiseSynth({
+                noise: { type: "pink" },
+                envelope: { attack: 0.5, decay: 2, sustain: 0, release: 2 }
+            }).connect(globalFilter);
+
+            Tone.start();
+            audioInit = true;
+        }
+
+        // --- 2. State & Presets ---
+        const colorPalettes = {
+            default: ['#EAE7E0', '#D8D4CA', '#EAE7E0'],
+            bowl: ['#D6C3A3', '#8A9A86', '#EAE7E0'],   // Gold / Moss
+            wood: ['#A89B8C', '#7A6B5D', '#EAE7E0'],   // Brown / Bark
+            sand: ['#E5D3B3', '#D4C4A8', '#EAE7E0'],   // Beige / Sand
+            dew: ['#A0B4B7', '#C2D6D8', '#EAE7E0'],    // Water Blue
+            paper: ['#F5F2EB', '#D8D4CA', '#EAE7E0']   // White / Dust
+        };
+
+        const presets = [
+            {
+                id: 'p1', name: '空钵 / Empty Bowl', type: 'preset', color: 'bowl',
+                params: { noise: 0, impulse: 0.1, sine: 0.9, fm: 0.3, saw: 0, freq: 220, filter: 3000, envA: 0.1, envD: 2, envS: 0, envR: 3 },
+                config: { length: '1n' } 
+            },
+            {
+                id: 'p2', name: '朽木 / Dead Wood', type: 'preset', color: 'wood',
+                params: { noise: 0.1, impulse: 0.6, sine: 0.4, fm: 0.05, saw: 0, freq: 100, filter: 800, envA: 0.01, envD: 0.4, envS: 0, envR: 0.2 },
+                config: { length: '4n' }
+            },
+            {
+                id: 'p3', name: '流沙 / Flowing Sand', type: 'preset', color: 'sand',
+                params: { noise: 0.7, impulse: 0.3, sine: 0, fm: 0, saw: 0, freq: 300, filter: 5000, envA: 0.5, envD: 2, envS: 0.5, envR: 2 },
+                config: { length: '2n' }
+            },
+            {
+                id: 'p4', name: '露滴 / Dew Drop', type: 'preset', color: 'dew',
+                params: { noise: 0, impulse: 0.1, sine: 0.9, fm: 0, saw: 0, freq: 500, filter: 8000, envA: 0.005, envD: 0.15, envS: 0, envR: 0.2 },
+                config: { length: '16n' } 
+            },
+            {
+                id: 'p5', name: '纸息 / Paper Breath', type: 'preset', color: 'paper',
+                params: { noise: 0.5, impulse: 0.1, sine: 0, fm: 0, saw: 0.2, freq: 150, filter: 2000, envA: 0.2, envD: 1.5, envS: 0.2, envR: 1.5 },
+                config: { length: '2n' }
+            }
+        ];
+
+        let customAssets = [];
+        let state = {
+            selectedAsset: null,
+            editingAsset: null, // A detached copy for tweaking
+            targetColors: colorPalettes.default
+        };
+
+        // --- 3. Playback Logic ---
+        function playSound(assetData) {
+            if (!audioInit) return;
+            const p = assetData.params;
+            const freq = p.freq;
+            const dur = assetData.config.length;
+            const time = Tone.now();
+
+            // Set volumes based on parameters
+            const toDb = (val) => val === 0 ? -100 : 20 * Math.log10(val);
+
+            // 应用全局滤波器设置
+            if (globalFilter) {
+                globalFilter.frequency.rampTo(p.filter, 0.01);
+            }
+
+            // 应用实时包络 (ADSR)
+            [synths.sine, synths.fm, synths.saw, synths.noise].forEach(synth => {
+                if (synth.envelope) {
+                    synth.envelope.attack = p.envA;
+                    synth.envelope.decay = p.envD;
+                    synth.envelope.sustain = p.envS;
+                    synth.envelope.release = p.envR;
+                }
+            });
+
+            // Sine
+            if(p.sine > 0) {
+                synths.sine.volume.rampTo(toDb(p.sine), 0.01);
+                
+                if(assetData.color === 'dew') {
+                    // 保留露滴专属的“极速上滑音”物理特效，但响应当前起音时间
+                    synths.sine.triggerAttackRelease(freq * 0.4, dur, time);
+                    synths.sine.frequency.exponentialRampToValueAtTime(freq * 1.8, time + p.envA + 0.05); 
+                } else {
+                    synths.sine.triggerAttackRelease(freq, dur, time);
+                }
+            }
+            
+            // FM
+            if(p.fm > 0) {
+                synths.fm.volume.rampTo(toDb(p.fm), 0.01);
+                synths.fm.triggerAttackRelease(freq, dur, time);
+            }
+
+            // Impulse
+            if(p.impulse > 0) {
+                synths.impulse.volume.rampTo(toDb(p.impulse), 0.01); // 移除额外的增益，保持轻柔
+                synths.impulse.triggerAttackRelease(freq/2, "16n", time);
+            }
+
+            // Sawtooth
+            if(p.saw > 0) {
+                synths.saw.volume.rampTo(toDb(p.saw), 0.01);
+                synths.saw.triggerAttackRelease(freq/2, dur, time);
+            }
+
+            // Noise
+            if(p.noise > 0) {
+                synths.noise.volume.rampTo(toDb(p.noise), 0.01);
+                synths.noise.triggerAttackRelease(dur, time);
+            }
+
+            // Trigger Visuals
+            state.targetColors = colorPalettes[assetData.color] || colorPalettes.default;
+            
+            // Revert back to default after sound ends
+            setTimeout(() => {
+                state.targetColors = colorPalettes.default;
+            }, Tone.Time(dur).toMilliseconds() + 1000);
+        }
+
+        // --- 4. Fluid Canvas Animation ---
+        const canvas = document.getElementById('fluidCanvas');
+        const ctx = canvas.getContext('2d');
+        let cw, ch;
+        
+        let currentColors = [...colorPalettes.default];
+        let timeVar = 0;
+
+        function resizeCanvas() {
+            cw = canvas.width = window.innerWidth;
+            ch = canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        function lerpColor(a, b, amount) { 
+            const ah = parseInt(a.replace(/#/g, ''), 16),
+                  ar = ah >> 16, ag = ah >> 8 & 0xff, ab = ah & 0xff,
+                  bh = parseInt(b.replace(/#/g, ''), 16),
+                  br = bh >> 16, bg = bh >> 8 & 0xff, bb = bh & 0xff,
+                  rr = ar + amount * (br - ar),
+                  rg = ag + amount * (bg - ag),
+                  rb = ab + amount * (bb - ab);
+            return '#' + ((1 << 24) + (rr << 16) + (rg << 8) + rb | 0).toString(16).slice(1);
+        }
+
+        function drawFluid() {
+            timeVar += 0.005;
+            
+            // Interpolate colors smoothly
+            for(let i=0; i<3; i++) {
+                currentColors[i] = lerpColor(currentColors[i], state.targetColors[i], 0.02);
+            }
+
+            // Fill base
+            ctx.fillStyle = currentColors[0];
+            ctx.fillRect(0, 0, cw, ch);
+
+            // Draw organic radial gradients
+            drawGradientBlob(cw*0.3 + Math.sin(timeVar)*100, ch*0.4 + Math.cos(timeVar*0.8)*100, cw*0.6, currentColors[1]);
+            drawGradientBlob(cw*0.7 + Math.cos(timeVar*1.2)*150, ch*0.7 + Math.sin(timeVar*0.5)*100, cw*0.7, currentColors[2]);
+
+            requestAnimationFrame(drawFluid);
+        }
+
+        function drawGradientBlob(x, y, radius, color) {
+            const grad = ctx.createRadialGradient(x, y, 0, x, y, radius);
+            // Convert hex to rgba for smooth fading
+            const c = hexToRgb(color);
+            grad.addColorStop(0, `rgba(${c.r}, ${c.g}, ${c.b}, 0.6)`);
+            grad.addColorStop(1, `rgba(${c.r}, ${c.g}, ${c.b}, 0)`);
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function hexToRgb(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? { r: parseInt(result[1], 16), g: parseInt(result[2], 16), b: parseInt(result[3], 16) } : {r:255,g:255,b:255};
+        }
+        
+        drawFluid();
+
+        // --- 5. UI Rendering & Interaction ---
+        const container = document.getElementById('assets-container');
+        const customContainer = document.getElementById('custom-assets-container');
+        const customSection = document.getElementById('custom-assets-section');
+        const contextActions = document.getElementById('context-actions');
+        
+        // Panel Elements
+        const panel = document.getElementById('deconstruct-panel');
+        const titleEl = document.getElementById('panel-title');
+        const statusEl = document.getElementById('panel-status');
+        const btnSave = document.getElementById('btn-save');
+        const btnRemix = document.getElementById('btn-remix');
+        const inputs = ['noise', 'impulse', 'sine', 'fm', 'saw', 'freq', 'filter', 'envA', 'envD', 'envS', 'envR'].map(id => ({
+            name: id,
+            el: document.getElementById(`val-${id}`)
+        }));
+
+        // 自定义资产重命名逻辑
+        titleEl.addEventListener('blur', (e) => {
+            if (state.editingAsset && state.editingAsset.type === 'custom') {
+                state.editingAsset.name = e.target.innerText.trim() || 'Untitled';
+                // 同步更新保存状态
+                const idx = customAssets.findIndex(a => a.id === state.editingAsset.id);
+                if (idx > -1) {
+                    customAssets[idx].name = state.editingAsset.name;
+                    renderAssets();
+                }
+            }
+        });
+
+        titleEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                titleEl.blur(); // 按下回车即保存并失去焦点
+            }
+        });
+
+        function showMessage(msg) {
+            const box = document.getElementById('message-box');
+            box.innerText = msg;
+            box.style.opacity = '1';
+            setTimeout(() => box.style.opacity = '0', 2000);
+        }
+
+        function renderAssets() {
+            container.innerHTML = '';
+            presets.forEach(asset => createOrb(asset, container));
+
+            if(customAssets.length > 0) {
+                customSection.classList.remove('hidden');
+                customContainer.innerHTML = '';
+                customAssets.forEach(asset => createOrb(asset, customContainer));
+            }
+        }
+
+        function createOrb(asset, parent) {
+            const el = document.createElement('div');
+            el.className = `asset-orb ${state.selectedAsset?.id === asset.id ? 'active' : ''}`;
+            el.innerHTML = `<span class="text-xs tracking-wide text-gray-700 opacity-60">${asset.name.split(' / ')[0]}</span>`;
+            
+            el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                selectAsset(asset);
+                playSound(state.editingAsset); // Play the current state
+            });
+            parent.appendChild(el);
+        }
+
+        function selectAsset(asset) {
+            // Deep copy so tweaks don't affect original preset until saved
+            state.selectedAsset = asset;
+            state.editingAsset = JSON.parse(JSON.stringify(asset)); 
+            
+            renderAssets();
+            contextActions.style.opacity = '1';
+            updatePanelUI();
+        }
+
+        function updatePanelUI() {
+            if(!state.editingAsset) return;
+            const a = state.editingAsset;
+            titleEl.innerText = a.name;
+            
+            if(a.type === 'preset') {
+                statusEl.innerText = "Preset / 预设 (调节后需 Remix 保存)";
+                btnSave.classList.add('btn-disabled');
+                btnRemix.classList.remove('hidden');
+                
+                // 禁用重命名
+                titleEl.contentEditable = "false";
+                titleEl.classList.remove('cursor-text');
+            } else {
+                statusEl.innerText = "Custom / 自定义资产 (可覆写保存)";
+                btnSave.classList.remove('btn-disabled');
+                btnRemix.classList.add('hidden'); 
+                
+                // 开启重命名
+                titleEl.contentEditable = "true";
+                titleEl.classList.add('cursor-text');
+            }
+
+            inputs.forEach(i => {
+                if (i.el) i.el.value = a.params[i.name];
+            });
+        }
+
+        // Slider Interaction (Real-time update)
+        inputs.forEach(i => {
+            i.el.addEventListener('input', (e) => {
+                if(state.editingAsset) {
+                    state.editingAsset.params[i.name] = parseFloat(e.target.value);
+                    playSound(state.editingAsset); // Instant feedback
+                }
+            });
+        });
+
+        // Button Actions
+        document.getElementById('btn-deconstruct').addEventListener('click', () => {
+            panel.classList.add('open');
+            contextActions.style.opacity = '0'; // Hide context btn
+        });
+
+        document.getElementById('btn-close-panel').addEventListener('click', () => {
+            panel.classList.remove('open');
+            if(state.selectedAsset) contextActions.style.opacity = '1';
+        });
+
+        document.getElementById('btn-remix').addEventListener('click', () => {
+            const newId = 'c' + Date.now();
+            const newAsset = {
+                ...JSON.parse(JSON.stringify(state.editingAsset)),
+                id: newId,
+                name: `Void-${customAssets.length + 1}`,
+                type: 'custom'
+            };
+            customAssets.push(newAsset);
+            selectAsset(newAsset);
+            showMessage('已提取为自定义资产');
+        });
+
+        document.getElementById('btn-save').addEventListener('click', () => {
+            if(state.editingAsset.type === 'custom') {
+                // Find and update in custom array
+                const idx = customAssets.findIndex(a => a.id === state.editingAsset.id);
+                if(idx > -1) {
+                    customAssets[idx] = JSON.parse(JSON.stringify(state.editingAsset));
+                    selectAsset(customAssets[idx]); // refresh selection
+                    showMessage('自定义资产已保存');
+                }
+            }
+        });
+
+        // 核心修复：阻止面板内部的点击事件冒泡到 body 导致关闭
+        document.getElementById('deconstruct-panel').addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+        document.getElementById('context-actions').addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+
+        // Deselect when clicking background
+        document.body.addEventListener('click', (e) => {
+            if(!e.target.closest('.asset-orb') && e.target.id !== 'start-btn') {
+                state.selectedAsset = null;
+                state.editingAsset = null;
+                renderAssets();
+                contextActions.style.opacity = '0';
+                panel.classList.remove('open');
+            }
+        });
+
+        // Init Overlay
+        document.getElementById('start-btn').addEventListener('click', async () => {
+            await Tone.start();
+            initAudio();
+            document.getElementById('init-overlay').style.opacity = '0';
+            setTimeout(() => document.getElementById('init-overlay').remove(), 1000);
+            renderAssets();
+            showMessage('引擎已唤醒');
+        });
+
+    </script>
+</body>
+</html>
